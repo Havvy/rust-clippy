@@ -286,6 +286,40 @@ declare_lint! {
     "looping on a map using `iter` when `keys` or `values` would do"
 }
 
+
+/// **What it does:** Checks if a loop only iterates a single time
+///
+/// **Why is this bad?** Readability. The loop does not actually do anything,
+/// so is confusing why it is there.
+///
+/// **Known problems:** None.
+///
+/// **Example:**
+/// ```rust
+/// loop {
+///   if condition() {
+///     println!("{}", 5);
+///   } else {
+///     println!("{}", 6);
+///   }    
+/// }
+/// ```
+///
+/// could be replaced by
+///
+/// ```rust
+/// if condition() {
+///   println!("{}", 5);
+/// } else {
+///   println!("{}", 6);
+/// }  
+/// ```
+declare_lint! { 
+    pub SINGLE_ITERATION_LOOP,
+    Warn,
+    "loop executing exactly once, doing nothing"
+}
+
 #[derive(Copy, Clone)]
 pub struct Pass;
 
@@ -303,7 +337,8 @@ impl LintPass for Pass {
                     EXPLICIT_COUNTER_LOOP,
                     EMPTY_LOOP,
                     WHILE_LET_ON_ITERATOR,
-                    FOR_KV_MAP)
+                    FOR_KV_MAP,
+                    SINGLE_ITERATION_LOOP)
     }
 }
 
@@ -387,6 +422,33 @@ impl LateLintPass for Pass {
                                            format!("for {} in {} {{ .. }}", loop_var, iterator));
                         });
                     }
+                }
+            }
+        }
+
+        fn span_single_loop_iteration_lint(cx: &LateContext, loop_span: ::syntax::codemap::Span) {
+            span_lint(cx,
+                      SINGLE_ITERATION_LOOP,
+                      loop_span,
+                      "loop executing exactly once, doing nothing")
+        }
+
+        // check for `loop { return; }` that could be  `return;`
+        if let ExprLoop(ref block, _) = expr.node {
+            for stmt in &block.stmts {
+                match stmt.node {
+                    StmtSemi(ref inner_expr, _) => {
+                        match inner_expr.node {
+                            ExprBreak(_) => {
+                                span_single_loop_iteration_lint(cx, expr.span)
+                            },
+
+                            _ => { continue; }
+                        }
+                    },
+
+                    StmtExpr(_, _) => { continue; },
+                    StmtDecl(_, _) => { continue; }
                 }
             }
         }
